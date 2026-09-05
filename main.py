@@ -64,5 +64,5 @@ def start_search(message):
     bot.reply_to(message, "Просто отправьте ваш вопрос в чат.")
 
 
-if name == "main":
+if __name__ == "__main__":
     bot.infinity_polling()
