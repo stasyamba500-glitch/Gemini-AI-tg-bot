@@ -1,68 +1,81 @@
 import os
 import telebot
 from telebot import types
-from google import genai
+from googlesearch import search
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-
+# Отримання токена з змінних оточення
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(BOT_TOKEN)
-client = genai.Client()
-chat = client.chats.create(model="gemini-2.5-flash")
 
+# Словник для збереження історії пошуків (user_id: [список запитів])
 user_history = {}
 
-
-def main_keyboard():
+# Створення клавіатури з кнопками
+def get_main_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add(
-        types.KeyboardButton("Пошук"), types.KeyboardButton("Мої запити")
-    )
+    btn_search = types.KeyboardButton("Пошук")
+    btn_history = types.KeyboardButton("Мої запити")
+    markup.add(btn_search, btn_history)
     return markup
 
-
-@bot.message_handler(commands=["start"])
-def send_welcome(message):
-    bot.reply_to(
-        message,
-        "Привет! Я готов к работе. Выберите действие:",
-        reply_markup=main_keyboard(),
+@bot.message_handler(commands=['start'])
+def start_message(message):
+    bot.send_message(
+        message.chat.id,
+        "Привіт! Я бот для пошуку в Google.\nНатисніть Пошук, щоб зробити запит, або Мої запити, щоб переглянути історію.",
+        parse_mode="Markdown",
+        reply_markup=get_main_keyboard()
     )
-
 
 @bot.message_handler(func=lambda message: message.text == "Мої запити")
 def show_history(message):
     user_id = message.from_user.id
     history = user_history.get(user_id, [])
-
-    if history:
-        response = "Ваши последние запросы:\n\n" + "\n".join(history)
-        bot.reply_to(message, response)
+    
+    if not history:
+        bot.send_message(message.chat.id, "Ваша історія запитів порожня.", reply_markup=get_main_keyboard())
     else:
-        bot.reply_to(message, "Вы еще не делали запросов.")
+        text = "📜 Ваші останні запити:\n\n"
+        for idx, item in enumerate(history[-10:], 1):
+            text += f"{idx}. {item}\n"
+        bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=get_main_keyboard())
 
+@bot.message_handler(func=lambda message: message.text == "Пошук")
+def ask_query(message):
+    msg = bot.send_message(message.chat.id, "Введіть ваш пошуковий запит:")
+    bot.register_next_step_handler(msg, process_search)
 
-@bot.message_handler(
-    func=lambda message: message.text not in ["Пошук", "Мої запити"]
-)
-def handle_query(message):
-    user_id = message.from_user.id
+def process_search(message):
     query = message.text
+    user_id = message.from_user.id
 
+    # Зі збереженням історії
     if user_id not in user_history:
         user_history[user_id] = []
     user_history[user_id].append(query)
 
+    bot.send_message(message.chat.id, f"Шукаю в Google: *{query}*...", parse_mode="Markdown")
+
     try:
-        response = chat.send_message(query)
-        bot.reply_to(message, response.text)
+        # Отримання перших 5 результатів пошуку
+        results = list(search(query, num_results=5, lang="uk"))
+        
+        if not results:
+            bot.send_message(message.chat.id, "На жаль, за вашим запитом нічого не знайдено.", reply_markup=get_main_keyboard())
+            return
+
+        text = "🔎 Результати пошуку:\n\n"
+        for idx, link in enumerate(results, 1):
+            text += f"{idx}. {link}\n"
+
+        bot.send_message(message.chat.id, text, reply_markup=get_main_keyboard())
     except Exception as e:
-        bot.reply_to(message, "Произошла ошибка при обработке запроса.")
+        bot.send_message(message.chat.id, f"Сталася помилка при пошуку: {e}", reply_markup=get_main_keyboard())
 
+# Решта текстових повідомлень, які не натиснуті через кнопки
+@bot.message_handler(func=lambda message: True)
+def handle_text(message):
+    process_search(message)
 
-@bot.message_handler(func=lambda message: message.text == "Пошук")
-def start_search(message):
-    bot.reply_to(message, "Просто отправьте ваш вопрос в чат.")
-
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     bot.infinity_polling()
