@@ -1,16 +1,13 @@
 import os
 import telebot
 from telebot import types
-from googlesearch import search
+from duckduckgo_search import DDGS
 
-# Отримання токена з змінних оточення
 BOT_TOKEN = os.environ.get('BOT_TOKEN')
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Словник для збереження історії пошуків (user_id: [список запитів])
 user_history = {}
 
-# Створення клавіатури з кнопками
 def get_main_keyboard():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     btn_search = types.KeyboardButton("Пошук")
@@ -22,7 +19,7 @@ def get_main_keyboard():
 def start_message(message):
     bot.send_message(
         message.chat.id,
-        "Привіт! Я бот для пошуку в Google.\nНатисніть Пошук, щоб зробити запит, або Мої запити, щоб переглянути історію.",
+        "Привіт! Я бот для пошуку в мережі.\nНатисніть Пошук, щоб зробити запит.",
         parse_mode="Markdown",
         reply_markup=get_main_keyboard()
     )
@@ -49,30 +46,30 @@ def process_search(message):
     query = message.text
     user_id = message.from_user.id
 
-    # Зі збереженням історії
     if user_id not in user_history:
         user_history[user_id] = []
     user_history[user_id].append(query)
 
-    bot.send_message(message.chat.id, f"Шукаю в Google: *{query}*...", parse_mode="Markdown")
+    bot.send_message(message.chat.id, f"Шукаю: *{query}*...", parse_mode="Markdown")
 
     try:
-        # Отримання перших 5 результатів пошуку
-        results = list(search(query, num_results=5, lang="uk"))
+        results = []
+        with DDGS() as ddgs:
+            for r in ddgs.text(query, max_results=5):
+                results.append(r)
         
         if not results:
             bot.send_message(message.chat.id, "На жаль, за вашим запитом нічого не знайдено.", reply_markup=get_main_keyboard())
             return
 
         text = "🔎 Результати пошуку:\n\n"
-        for idx, link in enumerate(results, 1):
-            text += f"{idx}. {link}\n"
+        for idx, res in enumerate(results, 1):
+            text += f"{idx}. [{res['title']}]({res['href']})\n"
 
-        bot.send_message(message.chat.id, text, reply_markup=get_main_keyboard())
+        bot.send_message(message.chat.id, text, parse_mode="Markdown", reply_markup=get_main_keyboard(), disable_web_page_preview=True)
     except Exception as e:
         bot.send_message(message.chat.id, f"Сталася помилка при пошуку: {e}", reply_markup=get_main_keyboard())
 
-# Решта текстових повідомлень, які не натиснуті через кнопки
 @bot.message_handler(func=lambda message: True)
 def handle_text(message):
     process_search(message)
