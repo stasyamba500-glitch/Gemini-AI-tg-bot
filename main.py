@@ -46,6 +46,14 @@ def process_search(message):
     query = message.text
     user_id = message.from_user.id
 
+    # Якщо користувач натиснув системну кнопку під час очікування введення
+    if query in ["Пошук", "Мої запити"]:
+        if query == "Мої запити":
+            show_history(message)
+        else:
+            ask_query(message)
+        return
+
     if user_id not in user_history:
         user_history[user_id] = []
     user_history[user_id].append(query)
@@ -55,7 +63,8 @@ def process_search(message):
     try:
         results = []
         with DDGS() as ddgs:
-            for r in ddgs.text(query, max_results=5):
+            # Пошук із вказанням регіону та мови для кращих результатів
+            for r in ddgs.text(query, region="ua-uk", max_results=5):
                 results.append(r)
         
         if not results:
@@ -70,8 +79,9 @@ def process_search(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"Сталася помилка при пошуку: {e}", reply_markup=get_main_keyboard())
 
+# Будь-яке інше текстове повідомлення
 @bot.message_handler(func=lambda message: True)
-def handle_text(message):
+def handle_other(message):
     process_search(message)
 
 if __name__ == '__main__':
